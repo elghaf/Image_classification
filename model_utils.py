@@ -10,7 +10,7 @@ from collections import OrderedDict
 def build_model(arch='vgg16', learning_rate=0.01, hidden_units=512, gpu=False):
     
     # Check if the specified architecture is supported
-    supported_architectures = ['vgg16', 'densenet121']  # Add supported architectures here
+    supported_architectures = ['vgg16', 'densenet121']
     if arch not in supported_architectures:
         raise ValueError("Unsupported architecture. Please choose from 'vgg16' or 'densenet121'.")
 
