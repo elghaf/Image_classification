@@ -36,3 +36,18 @@ def load_data(data_dir):
     dataloaders = {'train': train_loader, 'valid': valid_loader, 'test': test_loader}
 
     return dataloaders, train_dataset.class_to_idx
+
+def process_image(image_path):
+    # Load and process the image
+    image = Image.open(image_path)
+
+    preprocess = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+
+    image = preprocess(image)
+
+    return image

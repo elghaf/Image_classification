@@ -5,22 +5,45 @@ from torch import nn, optim
 from data_utils import load_data
 from tqdm import tqdm
 
-def build_model(arch='vgg16', learning_rate=0.01, hidden_units=512, gpu=False):
-    # Load a pre-trained model
-    model = getattr(models, arch)(pretrained=True)
-    
-    # Freeze parameters so we don't backprop through them
-    for param in model.parameters():
-        param.requires_grad = False
 
-    # Define a new, untrained feed-forward network as a classifier
-    classifier = nn.Sequential(
-        nn.Linear(model.classifier[0].in_features, hidden_units),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(hidden_units, 102),
-        nn.LogSoftmax(dim=1)
-    )
+from collections import OrderedDict
+def build_model(arch='vgg16', learning_rate=0.01, hidden_units=512, gpu=False):
+    
+    # Check if the specified architecture is supported
+    supported_architectures = ['vgg16', 'densenet121']  # Add supported architectures here
+    if arch not in supported_architectures:
+        raise ValueError("Unsupported architecture. Please choose from 'vgg16' or 'densenet121'.")
+
+    # Load a pre-trained model
+    if arch == 'vgg16':
+        model = models.vgg16(pretrained=True)
+        # Freeze feature parameters
+        for param in model.parameters():
+            param.requires_grad = False
+        # Classifier for VGG16
+        classifier = nn.Sequential(OrderedDict([
+            ('fc1', nn.Linear(25088, hidden_units)),
+            ('relu', nn.ReLU()),
+            ('dropout', nn.Dropout(0.5)),
+            ('fc2', nn.Linear(hidden_units, 102)),
+            ('output', nn.LogSoftmax(dim=1))
+        ]))
+        
+    elif arch == 'densenet121':
+        model = models.densenet121(pretrained=True)
+        # Freeze feature parameters
+        for param in model.parameters():
+            param.requires_grad = False
+        # Classifier for Densenet
+        classifier = nn.Sequential(OrderedDict([
+            ('fc1', nn.Linear(1024, hidden_units)),
+            ('relu', nn.ReLU()),
+            ('dropout', nn.Dropout(0.5)),
+            ('fc2', nn.Linear(hidden_units, 102)),
+            ('output', nn.LogSoftmax(dim=1))
+        ]))
+    else:
+        raise ValueError("Unsupported architecture. Please choose from 'vgg16' or 'densenet121'.")
 
     model.classifier = classifier
 
@@ -35,6 +58,7 @@ def build_model(arch='vgg16', learning_rate=0.01, hidden_units=512, gpu=False):
     model.to(device)
 
     return model, criterion, optimizer
+
 
 def train_model(model, criterion, optimizer, data_dir, epochs=20, gpu=False):
     # Load the data
@@ -72,8 +96,45 @@ def save_checkpoint(model, optimizer, save_dir):
     checkpoint_path = f'{save_dir}/checkpoint.pth'
 
     checkpoint = {
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
+        'arch': arch,
+        'classifier': classifier,
+        'class_to_idx': model.class_to_idx,
+        'state_dict': model.state_dict()
     }
 
     torch.save(checkpoint, checkpoint_path)
+    print("model check is saved succ")
+
+def load_checkpoint(checkpoint_path):
+    checkpoint = torch.load(checkpoint_path)
+    
+    arch = checkpoint['arch']
+    model = getattr(models, arch)(pretrained=True)
+    
+    model.classifier = checkpoint['classifier']
+    model.load_state_dict(checkpoint['state_dict'])
+    
+    optimizer = optim.Adam(model.classifier.parameters(), lr=checkpoint['learning_rate'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    
+    return model, optimizer
+
+def predict(model, image, topk=5, gpu=False):
+    # Set device
+    device = torch.device("cuda" if gpu and torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    # Process image and convert to a 1D tensor
+    image = image.unsqueeze(0).to(device)
+
+    model.eval()
+    with torch.no_grad():
+        output = model(image)
+        probabilities = torch.exp(output)
+
+    top_probs, top_indices = torch.topk(probabilities, topk)
+    top_probs = top_probs.cpu().numpy().tolist()[0]
+    top_indices = top_indices.cpu().numpy().tolist()[0]
+
+    return top_probs, top_indices
+
